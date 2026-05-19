@@ -1,0 +1,163 @@
+:root {
+  --bg: #f4f1ea;
+  --ink: #1f1b16;
+  --panel: #fffdf8;
+  --line: #d7cfc2;
+  --accent: #b24324;
+  --muted: #7a6f62;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "IBM Plex Sans", "Segoe UI", Tahoma, sans-serif;
+  color: var(--ink);
+  background: linear-gradient(120deg, #efe7da, var(--bg));
+}
+
+.topbar {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.topbar p {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+}
+
+.layout {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  grid-template-columns: repeat(12, 1fr);
+}
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  padding: 0.9rem;
+}
+
+.input-panel { grid-column: span 6; }
+.source-panel { grid-column: span 6; }
+.controls-panel { grid-column: span 5; }
+.overlay-panel { grid-column: span 7; }
+.export-panel { grid-column: span 12; }
+
+h2 {
+  margin: 0 0 0.7rem;
+  font-size: 1rem;
+}
+
+label {
+  display: block;
+  font-size: 0.9rem;
+  margin: 0.35rem 0;
+}
+
+input[type="text"],
+textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.55rem;
+  font: inherit;
+}
+
+button {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  border-radius: 6px;
+  padding: 0.5rem 0.7rem;
+  cursor: pointer;
+}
+
+.row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+
+.row.wrap {
+  flex-wrap: wrap;
+}
+
+.status {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.hint {
+  margin-top: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.source-preview,
+.overlay-preview {
+  position: relative;
+  min-height: 320px;
+  background: #ddd5c8;
+  border: 1px dashed #bcae9a;
+  overflow: hidden;
+}
+
+.source-preview img,
+.overlay-preview img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.crop-box {
+  position: absolute;
+  border: 2px solid;
+  width: 180px;
+  height: 180px;
+  top: 20px;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.12);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.crop-box.left {
+  left: 20px;
+  border-color: #1f77b4;
+}
+
+.crop-box.right {
+  left: 240px;
+  border-color: #d62728;
+}
+
+.control-grid {
+  display: grid;
+  gap: 0.5rem;
+}
+
+@media (max-width: 960px) {
+  .input-panel,
+  .source-panel,
+  .controls-panel,
+  .overlay-panel,
+  .export-panel {
+    grid-column: span 12;
+  }
+}

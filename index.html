@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IIIF Stereogram Compare Tool</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>IIIF Stereogram Compare Tool</h1>
+    <p>Initialize from iiif-content URL, Manifest, Canvas, or Image.</p>
+  </header>
+
+  <main class="layout">
+    <section class="panel input-panel">
+      <h2>Initialize</h2>
+      <label for="iiifInput">iiif-content URL or raw JSON URL</label>
+      <div class="row">
+        <input id="iiifInput" type="text" placeholder="https://... or ?iiif-content=...">
+        <button id="loadBtn">Load</button>
+      </div>
+      <label for="pasteInput">Or paste JSON</label>
+      <textarea id="pasteInput" rows="8" placeholder="Paste Manifest/Canvas/Image JSON"></textarea>
+      <div class="row">
+        <button id="parsePasteBtn">Parse Pasted JSON</button>
+        <span id="status" class="status">Idle</span>
+      </div>
+    </section>
+
+    <section class="panel source-panel">
+      <h2>Source Image + Crop Selectors</h2>
+      <p class="hint">Top preview with two draggable crop boxes is scaffolded here. Hook up drag/resize in app.js.</p>
+      <div class="source-preview" id="sourcePreview">
+        <img id="sourceImage" alt="Source image preview">
+        <div id="leftBox" class="crop-box left">L</div>
+        <div id="rightBox" class="crop-box right">R</div>
+      </div>
+    </section>
+
+    <section class="panel controls-panel">
+      <h2>Alignment Controls</h2>
+      <label><input id="selectorMode" type="checkbox"> Use ImageApiSelector mode</label>
+      <div class="control-grid">
+        <label>Blend
+          <input id="blend" type="range" min="0" max="100" value="50">
+        </label>
+        <label>Nudge X
+          <input id="nudgeX" type="range" min="-100" max="100" value="0">
+        </label>
+        <label>Nudge Y
+          <input id="nudgeY" type="range" min="-100" max="100" value="0">
+        </label>
+        <label>Blink Speed (ms)
+          <input id="blinkSpeed" type="range" min="80" max="1000" step="20" value="200">
+        </label>
+      </div>
+    </section>
+
+    <section class="panel overlay-panel">
+      <h2>Overlay Preview</h2>
+      <div class="overlay-preview" id="overlayPreview">
+        <img id="leftPreview" alt="Left eye preview">
+        <img id="rightPreview" alt="Right eye preview">
+      </div>
+      <div class="row">
+        <button id="blinkStartBtn">Start Blink</button>
+        <button id="blinkStopBtn">Stop Blink</button>
+      </div>
+    </section>
+
+    <section class="panel export-panel">
+      <h2>Export</h2>
+      <div class="row wrap">
+        <button id="downloadManifestBtn">Download Manifest JSON</button>
+        <button id="copyIiifContentBtn">Copy iiif-content (base64url)</button>
+        <button id="saveRerumCanvasBtn">Save Canvas to RERUM</button>
+        <button id="saveRerumManifestBtn">Save Manifest to RERUM</button>
+      </div>
+      <textarea id="exportOutput" rows="5" placeholder="Generated output appears here"></textarea>
+    </section>
+  </main>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
