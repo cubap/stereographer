@@ -173,9 +173,23 @@ async function onLoadInput() {
     setStatus("Loading IIIF resource...")
     setLoadSpinner(true)
     const resolved = decodeIiifContentIfNeeded(raw)
-    const json = await fetchJson(resolved)
-    initializeFromResource(json)
-    setStatus("Resource parsed. Waiting for image...")
+    let resource
+
+    try {
+      resource = await fetchJson(resolved)
+    } catch (err) {
+      if (!isLikelyImageUrl(resolved)) throw err
+
+      resource = {
+        id: resolved,
+        type: "Image"
+      }
+    }
+
+    initializeFromResource(resource)
+    const resourceType = getIiifType(resource)
+    const statusMessage = resourceType === "Image" ? "Image URL parsed. Waiting for image..." : "Resource parsed. Waiting for image..."
+    setStatus(statusMessage)
   } catch (err) {
     setStatus(`Load failed: ${err.message}`, true)
     setLoadSpinner(false)
@@ -1193,6 +1207,12 @@ function decodeIiifContentIfNeeded(raw) {
   }
 
   return raw
+}
+
+function isLikelyImageUrl(value) {
+  const parsed = safeUrl(value)
+  if (!parsed) return false
+  return /\.(avif|bmp|gif|jpe?g|jp2|png|tiff?|webp)(?:$|[?#])/i.test(parsed)
 }
 
 function safeUrl(value) {

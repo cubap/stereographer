@@ -42,7 +42,19 @@ async function init() {
   try {
     setStatus("Loading IIIF resource...")
     const resolved = decodeIiifContentIfNeeded(iiifContent)
-    const resource = await fetchJson(resolved)
+    let resource
+
+    try {
+      resource = await fetchJson(resolved)
+    } catch (err) {
+      if (!isLikelyImageUrl(resolved)) throw err
+
+      resource = {
+        id: resolved,
+        type: "Image"
+      }
+    }
+
     const image = resolveImageSource(resource)
 
     if (!image?.id) {
@@ -339,6 +351,12 @@ function decodeIiifContentIfNeeded(raw) {
   }
 
   return raw
+}
+
+function isLikelyImageUrl(value) {
+  const parsed = safeUrl(value)
+  if (!parsed) return false
+  return /\.(avif|bmp|gif|jpe?g|jp2|png|tiff?|webp)(?:$|[?#])/i.test(parsed)
 }
 
 function safeUrl(value) {
