@@ -74,6 +74,10 @@ const state = {
   rerumMatch: {
     Manifest: null,
     Canvas: null
+  },
+  rerumResource: {
+    Manifest: null,
+    Canvas: null
   }
 }
 
@@ -187,6 +191,7 @@ async function onLoadInput() {
     }
 
     initializeFromResource(resource)
+    persistIiifContentParam(raw)
     const resourceType = getIiifType(resource)
     const statusMessage = resourceType === "Image" ? "Image URL parsed. Waiting for image..." : "Resource parsed. Waiting for image..."
     setStatus(statusMessage)
@@ -194,6 +199,14 @@ async function onLoadInput() {
     setStatus(`Load failed: ${err.message}`, true)
     setLoadSpinner(false)
   }
+}
+
+function persistIiifContentParam(value) {
+  const params = new URLSearchParams(window.location.search)
+  params.set("iiif-content", value)
+  const query = params.toString()
+  history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash || ""}`)
+  updateShareViewerLink()
 }
 
 function onParsePasted() {
@@ -213,6 +226,8 @@ function initializeFromResource(resource) {
   state.type = getIiifType(resource)
   state.rerumMatch.Manifest = null
   state.rerumMatch.Canvas = null
+  state.rerumResource.Manifest = null
+  state.rerumResource.Canvas = null
   setCloverLink(null)
   const sourceRefs = resolveSourceRefs(resource)
   state.sourceManifest = sourceRefs.manifest
@@ -745,34 +760,54 @@ function buildCanvasOrManifest(kind = "Manifest") {
     throw new Error("No loaded image source to export")
   }
 
+  const matchedManifest = state.rerumResource.Manifest
+  const useMatchedManifest = isRenderableStereographerManifest(matchedManifest)
+  const matchedCanvas = useMatchedManifest
+    ? getPrimaryCanvas(matchedManifest)
+    : (state.rerumResource.Canvas ?? matchedManifest?.items?.[0] ?? null)
+
+  const canvasBase = deepCloneJson(matchedCanvas) ?? {}
+  const matchedPage = canvasBase?.items?.[0] ?? null
+  const matchedLeftAnno = matchedPage?.items?.[0] ?? null
+  const matchedRightAnno = matchedPage?.items?.[1] ?? null
+
+  const canvasId = getIiifId(canvasBase) ?? "https://example.org/canvas/1"
+  const pageId = getIiifId(matchedPage) ?? "https://example.org/page/1"
+  const leftAnnoId = getIiifId(matchedLeftAnno) ?? "https://example.org/anno/left"
+  const rightAnnoId = getIiifId(matchedRightAnno) ?? "https://example.org/anno/right"
+
   const leftBody = buildPaintBody(state.leftRegion)
   const rightBody = buildPaintBody(state.rightRegion)
 
   const canvas = {
-    id: "https://example.org/canvas/1",
+    ...canvasBase,
+    id: canvasId,
     type: "Canvas",
     width: state.leftRegion.w,
     height: state.leftRegion.h,
-    duration: 0.4,
+    duration: canvasBase.duration ?? 0.4,
     ...pickExportFields(state.sourceCanvas, ["label", "metadata", "summary", "description", "rights", "requiredStatement"]),
     items: [
       {
-        id: "https://example.org/page/1",
+        ...(matchedPage ?? {}),
+        id: pageId,
         type: "AnnotationPage",
         items: [
           {
-            id: "https://example.org/anno/left",
+            ...(matchedLeftAnno ?? {}),
+            id: leftAnnoId,
             type: "Annotation",
             motivation: "painting",
             body: leftBody,
-            target: "https://example.org/canvas/1#t=0,0.2"
+            target: `${canvasId}#t=0,0.2`
           },
           {
-            id: "https://example.org/anno/right",
+            ...(matchedRightAnno ?? {}),
+            id: rightAnnoId,
             type: "Annotation",
             motivation: "painting",
             body: rightBody,
-            target: "https://example.org/canvas/1#t=0.2,0.4"
+            target: `${canvasId}#t=0.2,0.4`
           }
         ]
       }
@@ -782,18 +817,57 @@ function buildCanvasOrManifest(kind = "Manifest") {
   const taggedCanvas = addStereographerMetadata(canvas, "Canvas")
   if (kind === "Canvas") return taggedCanvas
 
-  const manifestSource = state.sourceManifest ?? state.sourceCanvas
+  const manifest = useMatchedManifest
+    ? {
+      ...deepCloneJson(matchedManifest),
+      id: getIiifId(matchedManifest),
+      type: "Manifest",
+      items: [taggedCanvas]
+    }
+    : (() => {
+      const manifestSource = state.sourceManifest ?? state.sourceCanvas
+      const manifestId = getIiifId(matchedManifest) ?? "https://example.org/manifest/1"
 
-  const manifest = {
-    "@context": "http://iiif.io/api/presentation/3/context.json",
-    id: "https://example.org/manifest/1",
-    type: "Manifest",
-    label: normalizeIiifLabel(manifestSource?.label) ?? { en: ["Stereogram Draft"] },
-    ...pickExportFields(manifestSource, ["metadata", "summary", "description", "rights", "requiredStatement"]),
-    items: [taggedCanvas]
-  }
+      return {
+        "@context": "http://iiif.io/api/presentation/3/context.json",
+        id: manifestId,
+        type: "Manifest",
+        label: normalizeIiifLabel(manifestSource?.label) ?? { en: ["Stereogram Draft"] },
+        ...pickExportFields(manifestSource, ["metadata", "summary", "description", "rights", "requiredStatement"]),
+        items: [taggedCanvas]
+      }
+    })()
 
   return addStereographerMetadata(manifest, "Manifest")
+}
+
+function deepCloneJson(value) {
+  if (!value || typeof value !== "object") return null
+  try {
+    return JSON.parse(JSON.stringify(value))
+  } catch {
+    return null
+  }
+}
+
+function getPrimaryCanvas(manifest) {
+  return manifest?.items?.[0] ?? manifest?.sequences?.[0]?.canvases?.[0] ?? null
+}
+
+function isRenderableStereographerManifest(manifest) {
+  if (!manifest || getIiifType(manifest) !== "Manifest") return false
+
+  const canvas = getPrimaryCanvas(manifest)
+  if (!canvas || getIiifType(canvas) !== "Canvas") return false
+
+  const annotations = canvas.items?.[0]?.items
+  if (!Array.isArray(annotations) || annotations.length < 2) return false
+
+  const left = parseRegionFromBody(annotations[0]?.body ?? annotations[0]?.resource)
+  const right = parseRegionFromBody(annotations[1]?.body ?? annotations[1]?.resource)
+  if (!left || !right) return false
+
+  return Boolean(resolveImageSource(manifest)?.id)
 }
 
 function pickExportFields(source, keys) {
@@ -981,6 +1055,8 @@ async function hydrateFromExistingRerumMatch() {
     const canvasMatch = results.find(item => getIiifType(item) === "Canvas") ?? null
     state.rerumMatch.Manifest = getIiifId(manifestMatch)
     state.rerumMatch.Canvas = getIiifId(canvasMatch)
+    state.rerumResource.Manifest = manifestMatch
+    state.rerumResource.Canvas = canvasMatch
 
     const chosen = manifestMatch ?? canvasMatch
     const regions = extractRegionsFromResource(chosen)
