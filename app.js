@@ -42,6 +42,7 @@ const rightPreviewEl = document.getElementById("rightPreview")
 const exportOutputEl = document.getElementById("exportOutput")
 const cloverLinkRowEl = document.getElementById("cloverLinkRow")
 const cloverLinkEl = document.getElementById("cloverLink")
+const shareViewerLinkEl = document.getElementById("shareViewerLink")
 const blendEl = document.getElementById("blend")
 const blinkSpeedEl = document.getElementById("blinkSpeed")
 const blendValueEl = document.getElementById("blendValue")
@@ -49,6 +50,8 @@ const blinkSpeedValueEl = document.getElementById("blinkSpeedValue")
 const blinkToggleBtnEl = document.getElementById("blinkToggleBtn")
 const fullColorToggleEl = document.getElementById("fullColorToggle")
 const loadSpinnerEl = document.getElementById("loadSpinner")
+const RERUM_API_BASE = "https://tinydev.rerum.io"
+const STEREOGRAPHER_GENERATOR = "Stereographer"
 
 const state = {
   loaded: null,
@@ -67,7 +70,11 @@ const state = {
   blinkPreFullColor: null,
   useImageApiSelector: false,
   blinkTimer: null,
-  interaction: null
+  interaction: null,
+  rerumMatch: {
+    Manifest: null,
+    Canvas: null
+  }
 }
 
 init()
@@ -116,6 +123,7 @@ function init() {
   updateControlValues()
   updateOverlayControls()
   updatePreviewColorMode()
+  updateShareViewerLink()
 }
 
 function hydrateFromUrlParam() {
@@ -124,6 +132,7 @@ function hydrateFromUrlParam() {
   if (!iiifContent) return
 
   iiifInputEl.value = iiifContent
+  updateShareViewerLink()
   onLoadInput()
 }
 
@@ -148,6 +157,7 @@ function hydrateFromHash() {
   }
 
   syncView()
+  updateShareViewerLink()
 }
 
 async function onLoadInput() {
@@ -187,6 +197,9 @@ function onParsePasted() {
 function initializeFromResource(resource) {
   state.loaded = resource
   state.type = getIiifType(resource)
+  state.rerumMatch.Manifest = null
+  state.rerumMatch.Canvas = null
+  setCloverLink(null)
   const sourceRefs = resolveSourceRefs(resource)
   state.sourceManifest = sourceRefs.manifest
   state.sourceCanvas = sourceRefs.canvas
@@ -206,6 +219,7 @@ function initializeFromResource(resource) {
   const imageHeight = resolved.height ?? sourceImageEl.naturalHeight ?? 2000
   setCenteredRegions(imageWidth, imageHeight)
   hydrateFromHash()
+  updateShareViewerLink()
 }
 
 function resolveSourceRefs(resource) {
@@ -278,7 +292,7 @@ function setImageReady(isReady) {
   inputPanelEl?.setAttribute("aria-hidden", String(isReady))
 }
 
-function handleSourceImageLoad() {
+async function handleSourceImageLoad() {
   if (!state.image?.id || !state.awaitingImage) return
 
   state.awaitingImage = false
@@ -299,6 +313,11 @@ function handleSourceImageLoad() {
 
   setImageReady(true)
   syncView()
+
+  if (!location.hash) {
+    await hydrateFromExistingRerumMatch()
+  }
+
   setStatus("Loaded")
 }
 
@@ -504,6 +523,23 @@ function updateCropHash() {
   if (location.hash.slice(1) === hash) return
 
   history.replaceState(null, "", `${location.pathname}${location.search}#${hash}`)
+  updateShareViewerLink()
+}
+
+function updateShareViewerLink() {
+  if (!shareViewerLinkEl) return
+
+  const params = new URLSearchParams(window.location.search)
+  const content = iiifInputEl?.value?.trim() || params.get("iiif-content")
+
+  if (content) {
+    params.set("iiif-content", content)
+  } else {
+    params.delete("iiif-content")
+  }
+
+  const query = params.toString()
+  shareViewerLinkEl.href = `./viewer.html${query ? `?${query}` : ""}${window.location.hash || ""}`
 }
 
 function syncView() {
@@ -729,18 +765,21 @@ function buildCanvasOrManifest(kind = "Manifest") {
     ]
   }
 
-  if (kind === "Canvas") return canvas
+  const taggedCanvas = addStereographerMetadata(canvas, "Canvas")
+  if (kind === "Canvas") return taggedCanvas
 
   const manifestSource = state.sourceManifest ?? state.sourceCanvas
 
-  return {
+  const manifest = {
     "@context": "http://iiif.io/api/presentation/3/context.json",
     id: "https://example.org/manifest/1",
     type: "Manifest",
     label: normalizeIiifLabel(manifestSource?.label) ?? { en: ["Stereogram Draft"] },
     ...pickExportFields(manifestSource, ["metadata", "summary", "description", "rights", "requiredStatement"]),
-    items: [canvas]
+    items: [taggedCanvas]
   }
+
+  return addStereographerMetadata(manifest, "Manifest")
 }
 
 function pickExportFields(source, keys) {
@@ -830,20 +869,9 @@ async function saveToRerum(kind) {
   try {
     setCloverLink(null)
     const payload = buildCanvasOrManifest(kind)
-    const response = await fetch("https://tinydev.rerum.io/app/create", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payload)
-    })
-
-    if (!response.ok) {
-      throw new Error(`RERUM responded ${response.status}`)
-    }
-
-    const json = await response.json()
+    const json = await upsertRerum(kind, payload)
     const savedId = getIiifId(json)
+    state.rerumMatch[kind] = savedId ?? state.rerumMatch[kind]
     if (kind === "Manifest" && savedId) {
       const cloverUrl = buildCloverViewerUrl(savedId)
       setCloverLink(cloverUrl)
@@ -860,6 +888,187 @@ async function saveToRerum(kind) {
 
 function buildCloverViewerUrl(manifestUrl) {
   return `https://samvera-labs.github.io/clover-iiif/?iiif-content=${encodeURIComponent(manifestUrl)}`
+}
+
+function addStereographerMetadata(resource, kind) {
+  if (!resource || typeof resource !== "object") return resource
+
+  const existingMetadata = resource.metadata ?? []
+  const markerLabel = "Generated by"
+  const markerValue = STEREOGRAPHER_GENERATOR
+  const hasMarker = existingMetadata.some?.(entry => {
+    const label = entry?.label?.en?.[0] ?? entry?.label ?? ""
+    const value = entry?.value?.en?.[0] ?? entry?.value ?? ""
+    return String(label).toLowerCase() === markerLabel.toLowerCase() && String(value).includes(markerValue)
+  })
+
+  const metadata = hasMarker
+    ? existingMetadata
+    : [...existingMetadata, { label: { en: [markerLabel] }, value: { en: [markerValue] } }]
+
+  return {
+    ...resource,
+    metadata,
+    stereographer: {
+      generatedBy: STEREOGRAPHER_GENERATOR,
+      kind,
+      sourceImageId: state.image?.id ?? null,
+      sourceResourceId: getIiifId(state.sourceManifest ?? state.sourceCanvas ?? state.loaded)
+    }
+  }
+}
+
+async function upsertRerum(kind, payload) {
+  const existingId = state.rerumMatch[kind]
+
+  if (existingId) {
+    const updatePayload = {
+      ...payload,
+      id: existingId,
+      "@id": existingId
+    }
+
+    const updateResponse = await fetch(`${RERUM_API_BASE}/update`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(updatePayload)
+    })
+
+    if (updateResponse.ok) {
+      return updateResponse.json()
+    }
+  }
+
+  const createResponse = await fetch(`${RERUM_API_BASE}/create`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  })
+
+  if (!createResponse.ok) {
+    throw new Error(`RERUM responded ${createResponse.status}`)
+  }
+
+  return createResponse.json()
+}
+
+async function hydrateFromExistingRerumMatch() {
+  if (!state.image?.id) return
+
+  try {
+    const results = await queryRerumStereographerRecords(state.image.id)
+    if (!results.length) return
+
+    const manifestMatch = results.find(item => getIiifType(item) === "Manifest") ?? null
+    const canvasMatch = results.find(item => getIiifType(item) === "Canvas") ?? null
+    state.rerumMatch.Manifest = getIiifId(manifestMatch)
+    state.rerumMatch.Canvas = getIiifId(canvasMatch)
+
+    const chosen = manifestMatch ?? canvasMatch
+    const regions = extractRegionsFromResource(chosen)
+    if (!regions) return
+
+    const imageWidth = state.image.width || sourceImageEl.naturalWidth
+    const imageHeight = state.image.height || sourceImageEl.naturalHeight
+    if (!imageWidth || !imageHeight) return
+
+    state.regionWidth = regions.left.w
+    state.regionHeight = regions.left.h
+    state.leftRegion = clampRegion(regions.left, imageWidth, imageHeight, state.regionWidth, state.regionHeight)
+    state.rightRegion = clampRegion(regions.right, imageWidth, imageHeight, state.regionWidth, state.regionHeight)
+    syncView()
+    updateCropHash()
+
+    if (state.rerumMatch.Manifest) {
+      setCloverLink(buildCloverViewerUrl(state.rerumMatch.Manifest))
+    }
+  } catch {
+    // Ignore lookup failures and keep centered defaults.
+  }
+}
+
+async function queryRerumStereographerRecords(sourceImageId) {
+  const query = {
+    "$and": [
+      { "stereographer.generatedBy": STEREOGRAPHER_GENERATOR },
+      { "stereographer.sourceImageId": sourceImageId }
+    ]
+  }
+
+  const response = await fetch(`${RERUM_API_BASE}/query`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(query)
+  })
+
+  if (!response.ok) return []
+
+  const payload = await response.json()
+  if (Array.isArray(payload)) return payload
+  if (Array.isArray(payload?.results)) return payload.results
+  if (Array.isArray(payload?.items)) return payload.items
+  return []
+}
+
+function extractRegionsFromResource(resource) {
+  if (!resource || typeof resource !== "object") return null
+
+  const type = getIiifType(resource)
+  const canvas = type === "Manifest"
+    ? resource.items?.[0] ?? resource.sequences?.[0]?.canvases?.[0]
+    : resource
+
+  if (!canvas || getIiifType(canvas) !== "Canvas") return null
+
+  const annotations = canvas.items?.[0]?.items
+  if (!Array.isArray(annotations) || annotations.length < 2) return null
+
+  const left = parseRegionFromBody(annotations[0]?.body ?? annotations[0]?.resource)
+  const right = parseRegionFromBody(annotations[1]?.body ?? annotations[1]?.resource)
+  if (!left || !right) return null
+
+  return { left, right }
+}
+
+function parseRegionFromBody(body) {
+  if (!body || typeof body !== "object") return null
+
+  const bodyType = getIiifType(body)
+  if (bodyType === "SpecificResource") {
+    return parseRegionString(body.selector?.region)
+  }
+
+  if (bodyType !== "Image") return null
+
+  const imageId = getIiifId(body)
+  if (!imageId) return null
+
+  try {
+    const parsed = new URL(imageId)
+    const segments = parsed.pathname.split("/")
+    if (segments.length < 5) return null
+    return parseRegionString(segments[segments.length - 4])
+  } catch {
+    return null
+  }
+}
+
+function parseRegionString(value) {
+  if (!value || typeof value !== "string") return null
+  const parts = value.split(",").map(Number)
+  if (parts.length !== 4 || parts.some(Number.isNaN)) return null
+  return {
+    x: parts[0],
+    y: parts[1],
+    w: parts[2],
+    h: parts[3]
+  }
 }
 
 function setCloverLink(url) {
@@ -941,10 +1150,24 @@ function getIiifId(value) {
 }
 
 function toRegionUrl(baseImageUrl, region) {
-  const fullMarker = "/full/"
-  if (!baseImageUrl.includes(fullMarker)) return baseImageUrl
-  const [prefix, rest] = baseImageUrl.split(fullMarker)
-  return `${prefix}/${region.x},${region.y},${region.w},${region.h}/full/${rest}`
+  const regionValue = `${region.x},${region.y},${region.w},${region.h}`
+
+  try {
+    const parsed = new URL(baseImageUrl)
+    const segments = parsed.pathname.split("/")
+
+    // IIIF Image API URL shape ends with: /{region}/{size}/{rotation}/{quality}
+    if (segments.length < 5) return baseImageUrl
+
+    const regionIndex = segments.length - 4
+    if (regionIndex < 1) return baseImageUrl
+
+    segments[regionIndex] = regionValue
+    parsed.pathname = segments.join("/")
+    return parsed.toString()
+  } catch {
+    return baseImageUrl
+  }
 }
 
 function decodeIiifContentIfNeeded(raw) {

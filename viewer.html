@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>IIIF Stereographer Viewer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="./viewer.css">
+</head>
+
+<body>
+    <header class="viewer-topbar">
+        <div class="viewer-topbar-main">
+            <h1>Stereographer Viewer</h1>
+            <a id="openEditorLink" class="back-link" href="./index.html">Open Editor</a>
+        </div>
+    </header>
+
+    <main class="viewer-layout">
+        <section class="viewer-stage-wrap">
+            <div id="viewerViewport" class="viewer-viewport" aria-label="Stereogram viewport">
+                <div id="viewerOverlay" class="viewer-overlay" role="status" aria-live="polite">
+                    <span id="viewerSpinner" class="viewer-spinner" aria-hidden="true"></span>
+                    <p id="viewerOverlayText" class="viewer-overlay-text">Waiting for iiif-content...</p>
+                </div>
+                <div id="viewerStage" class="viewer-stage">
+                    <div id="viewerLeft" class="viewer-layer left" aria-label="Left eye"></div>
+                    <div id="viewerRight" class="viewer-layer right" aria-label="Right eye"></div>
+                </div>
+            </div>
+            <button id="viewerToggle" class="fab-toggle" type="button" aria-pressed="false" title="Flicker (Space)">&#9654;</button>
+        </section>
+
+        <section class="viewer-controls">
+
+            <div class="control-row control-row-flicker">
+                <label for="viewerSpeed">Speed (ms)</label>
+                <input id="viewerSpeed" type="range" min="60" max="500" step="20" value="200">
+                <output id="viewerSpeedValue" for="viewerSpeed">200</output>
+            </div>
+
+            <div class="control-row control-row-zoom">
+                <label for="viewerZoom">Zoom</label>
+                <input id="viewerZoom" type="range" min="50" max="400" step="5" value="100">
+            </div>
+            <div class="button-row">
+                <button id="resetViewBtn" type="button">Reset View</button>
+            </div>
+        </section>
+    </main>
+
+    <script type="module" src="./viewer.js"></script>
+</body>
+
+</html>

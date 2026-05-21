@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>IIIF Stereogram Compare Tool</title>
+  <title>IIIF Stereographer Tool</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -13,8 +13,16 @@
 
 <body>
   <header class="topbar">
-    <h1>IIIF Stereogram Compare Tool</h1>
-    <p>Initialize from iiif-content URL, Manifest, Canvas, or Image.</p>
+    <div class="topbar-main">
+      <div>
+        <h1>IIIF Stereographer Tool</h1>
+        <p>Initialize from iiif-content URL, Manifest, Canvas, or Image.</p>
+      </div>
+      <nav class="topbar-links" aria-label="Project links">
+        <a id="shareViewerLink" href="./viewer.html" target="_blank" rel="noopener noreferrer">Open Share Viewer</a>
+        <a href="https://github.com/cubap/stereographer" target="_blank" rel="noopener noreferrer">GitHub</a>
+      </nav>
+    </div>
   </header>
 
   <main class="layout" id="layout">
@@ -36,8 +44,7 @@
 
     <section class="panel source-panel requires-image" id="sourcePanel" hidden>
       <h2>Source Image + Crop Selectors</h2>
-      <p class="hint">Drag either square, resize from the corner handle, and keep them ordered for stereo flicker
-        testing.</p>
+      <p class="hint">Drag either square, resize from the corners, and see the preview.</p>
       <div class="source-preview" id="sourcePreview">
         <img id="sourceImage" crossorigin="anonymous" alt="Source image preview">
         <div id="leftBox" class="crop-box left" data-region="left">L
@@ -52,19 +59,19 @@
     </section>
 
     <section class="panel overlay-panel requires-image" id="overlayPanel" hidden>
-      <h2>Overlay Preview</h2>
+      <h2>Preview</h2>
       <div class="overlay-preview anaglyph-mode" id="overlayPreview">
         <div id="leftPreview" class="crop-preview left" aria-label="Left eye preview"><span>L</span></div>
         <div id="rightPreview" class="crop-preview right" aria-label="Right eye preview"><span>R</span></div>
       </div>
       <div class="control-grid preview-control-grid">
         <label class="control-row" for="blend">
-          <span>Blend</span>
+          <span>Blend Opacity</span>
           <input id="blend" type="range" min="0" max="100" value="50">
           <output id="blendValue" for="blend">50</output>
         </label>
         <label class="control-row" for="blinkSpeed">
-          <span>Blink Speed (ms)</span>
+          <span>Flicker (ms)</span>
           <input id="blinkSpeed" type="range" min="80" max="1000" step="20" value="200">
           <output id="blinkSpeedValue" for="blinkSpeed">200</output>
         </label>
@@ -79,18 +86,27 @@
     </section>
 
     <section class="panel export-panel requires-image" id="exportPanel" hidden>
-      <h2>Export</h2>
+      <h2>Save, Export, or Share</h2>
+      <p>You can send this page address to others to share your stereoscopic workspace.</p>
       <label><input id="selectorMode" type="checkbox"> Use ImageApiSelector mode</label>
-      <div class="row wrap">
-        <button id="showManifestBtn">Show Manifest</button>
-        <button id="downloadManifestBtn">Download JSON</button>
-        <button id="copyIiifContentBtn">IIIF-Content</button>
-        <button id="saveRerumCanvasBtn">Canvas 🧊</button>
-        <button id="saveRerumManifestBtn">Manifest 🧊</button>
+      <div class="export-action-group">
+        <p class="export-action-label">On this page</p>
+        <div class="row wrap export-actions-local">
+          <button id="showManifestBtn">Show Manifest</button>
+          <button id="downloadManifestBtn">Download JSON</button>
+          <button id="copyIiifContentBtn">IIIF-Content</button>
+        </div>
+      </div>
+      <div class="export-action-group export-action-group-save">
+        <p class="export-action-label">Save to RERUM</p>
+        <div class="row wrap export-actions-save">
+          <button id="saveRerumCanvasBtn">Save as Canvas 🧊</button>
+          <button id="saveRerumManifestBtn">Save as Manifest 📖</button>
+        </div>
       </div>
       <p id="cloverLinkRow" class="clover-link-row" hidden>
         View in Clover:
-        <a id="cloverLink" href="#" target="_blank" rel="noopener noreferrer">Open Viewer</a>
+        <a id="cloverLink" href="#" target="_blank" rel="noopener noreferrer">Open Viewer 🔗</a>
       </p>
       <textarea id="exportOutput" rows="5" placeholder="Generated output appears here"></textarea>
     </section>
