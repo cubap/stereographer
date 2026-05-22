@@ -47,11 +47,11 @@
       <p class="hint">Drag either square, resize from the corners, and see the preview.</p>
       <div class="source-preview" id="sourcePreview">
         <img id="sourceImage" crossorigin="anonymous" alt="Source image preview">
-        <div id="leftBox" class="crop-box left" data-region="left">L
+        <div id="leftBox" class="crop-box left">L
           <span class="resize-handle resize-handle-top-left" aria-hidden="true"></span>
           <span class="resize-handle" aria-hidden="true"></span>
         </div>
-        <div id="rightBox" class="crop-box right" data-region="right">R
+        <div id="rightBox" class="crop-box right">R
           <span class="resize-handle resize-handle-top-left" aria-hidden="true"></span>
           <span class="resize-handle" aria-hidden="true"></span>
         </div>
@@ -88,7 +88,7 @@
     <section class="panel export-panel requires-image" id="exportPanel" hidden>
       <h2>Save, Export, or Share</h2>
       <p>You can send this page address to others to share your stereoscopic workspace.</p>
-      <label><input id="selectorMode" type="checkbox"> Use ImageApiSelector mode</label>
+      <label><input id="imageApiSelectorToggle" type="checkbox"> Use ImageApiSelector mode</label>
       <div class="export-action-group">
         <p class="export-action-label">On this page</p>
         <div class="row wrap export-actions-local">
@@ -104,9 +104,11 @@
           <button id="saveRerumManifestBtn">Save as Manifest 📖</button>
         </div>
       </div>
-      <p id="cloverLinkRow" class="clover-link-row" hidden>
-        View in Clover:
-        <a id="cloverLink" href="#" target="_blank" rel="noopener noreferrer">Open Viewer 🔗</a>
+      <p id="viewerLinksRow" class="viewer-links-row" hidden>
+        Open in viewers:
+        <a id="cloverViewerLink" href="#" target="_blank" rel="noopener noreferrer">Clover 🔗</a>
+        <span class="viewer-links-separator">|</span>
+        <a id="stereographViewerLink" href="#" target="_blank" rel="noopener noreferrer">Stereograph 🔗</a>
       </p>
       <textarea id="exportOutput" rows="5" placeholder="Generated output appears here"></textarea>
     </section>

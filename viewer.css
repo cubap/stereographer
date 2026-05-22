@@ -117,6 +117,16 @@ body {
   font-weight: 700;
 }
 
+.viewer-overlay-help {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.viewer-overlay-help a {
+  color: var(--accent);
+  font-weight: 700;
+}
+
 .viewer-spinner {
   width: 1.7rem;
   height: 1.7rem;

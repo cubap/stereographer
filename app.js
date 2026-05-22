@@ -1,3 +1,5 @@
+import { buildCenteredRegions, decodeIiifContentIfNeeded, fetchJson, getIiifId, getIiifType, isLikelyImageUrl, parseRegionString, resolveImageSource, toBase64Url } from "./iiif-utils.js"
+
 // Overlay zoom state
 let overlayZoom = 1
 let overlayZoomOrigin = { x: 0.5, y: 0.5 }
@@ -40,8 +42,9 @@ const overlayPreviewEl = document.getElementById("overlayPreview")
 const leftPreviewEl = document.getElementById("leftPreview")
 const rightPreviewEl = document.getElementById("rightPreview")
 const exportOutputEl = document.getElementById("exportOutput")
-const cloverLinkRowEl = document.getElementById("cloverLinkRow")
-const cloverLinkEl = document.getElementById("cloverLink")
+const viewerLinksRowEl = document.getElementById("viewerLinksRow")
+const cloverViewerLinkEl = document.getElementById("cloverViewerLink")
+const stereographViewerLinkEl = document.getElementById("stereographViewerLink")
 const shareViewerLinkEl = document.getElementById("shareViewerLink")
 const blendEl = document.getElementById("blend")
 const blinkSpeedEl = document.getElementById("blinkSpeed")
@@ -49,9 +52,11 @@ const blendValueEl = document.getElementById("blendValue")
 const blinkSpeedValueEl = document.getElementById("blinkSpeedValue")
 const blinkToggleBtnEl = document.getElementById("blinkToggleBtn")
 const fullColorToggleEl = document.getElementById("fullColorToggle")
+const imageApiSelectorToggleEl = document.getElementById("imageApiSelectorToggle")
 const loadSpinnerEl = document.getElementById("loadSpinner")
 const RERUM_API_BASE = "https://tinydev.rerum.io"
 const STEREOGRAPHER_GENERATOR = "Stereographer"
+const DAVID_NEWBURY_VIEWER_BASE = "https://stereograph.davidnewbury.com/"
 
 const state = {
   loaded: null,
@@ -93,13 +98,14 @@ function init() {
   bindRegionInteraction(leftBoxEl, "left")
   bindRegionInteraction(rightBoxEl, "right")
   setImageReady(false)
+  updateImageApiSelectorAvailability()
 
   hydrateFromUrlParam()
 
   document.getElementById("loadBtn").addEventListener("click", onLoadInput)
   document.getElementById("parsePasteBtn").addEventListener("click", onParsePasted)
 
-  document.getElementById("selectorMode").addEventListener("change", event => {
+  imageApiSelectorToggleEl.addEventListener("change", event => {
     state.useImageApiSelector = event.target.checked
     if (state.imageReady) showManifest()
   })
@@ -117,10 +123,13 @@ function init() {
   document.getElementById("saveRerumManifestBtn").addEventListener("click", () => saveToRerum("Manifest"))
 
   document.addEventListener("keydown", event => {
-    if (event.code === "Space" && document.activeElement?.tagName !== "INPUT" && document.activeElement?.tagName !== "TEXTAREA") {
-      event.preventDefault()
-      if (state.imageReady) toggleBlink()
-    }
+    if (event.code !== "Space") return
+
+    const activeTag = document.activeElement?.tagName
+    if (activeTag === "INPUT" || activeTag === "TEXTAREA" || activeTag === "SELECT" || activeTag === "BUTTON" || document.activeElement?.isContentEditable) return
+
+    event.preventDefault()
+    if (state.imageReady) toggleBlink()
   })
 
   overlayPreviewEl.addEventListener("wheel", handleOverlayZoom, { passive: false })
@@ -228,7 +237,7 @@ function initializeFromResource(resource) {
   state.rerumMatch.Canvas = null
   state.rerumResource.Manifest = null
   state.rerumResource.Canvas = null
-  setCloverLink(null)
+  setViewerLinks(null)
   const sourceRefs = resolveSourceRefs(resource)
   state.sourceManifest = sourceRefs.manifest
   state.sourceCanvas = sourceRefs.canvas
@@ -239,6 +248,7 @@ function initializeFromResource(resource) {
   }
 
   state.image = resolved
+  updateImageApiSelectorAvailability()
   state.awaitingImage = true
   sourceImageEl.removeAttribute("src")
   sourceImageEl.src = resolved.id
@@ -274,7 +284,7 @@ function updateOverlayControls() {
   updateControlValues()
 
   rightPreviewEl.style.opacity = String(blend)
-  rightPreviewEl.style.transform = "none"
+  syncOverlayZoom()
 }
 
 function updateControlValues() {
@@ -415,33 +425,11 @@ function medianFromHistogram(hist, count) {
 }
 
 function setCenteredRegions(imageWidth, imageHeight) {
-  // Always leave 10% padding on all sides for initial region
-  const PADDING_PCT = 10
-  const maxWidth = Math.max(48, Math.floor((imageWidth / 100 * (100 - PADDING_PCT * 3)) / 2))
-  const maxHeight = Math.max(48, imageHeight / 100 * (100 - PADDING_PCT * 2))
-  const width = clamp(maxWidth, 48, imageWidth / 100 * (100 - PADDING_PCT * 2))
-  const height = clamp(maxHeight, 48, imageHeight / 100 * (100 - PADDING_PCT * 2))
-  state.regionWidth = width
-  state.regionHeight = height
-
-  // Always start left region at (PADDING_PCT, PADDING_PCT)
-  const y = PADDING_PCT * imageHeight / 100
-  const leftX = PADDING_PCT * imageWidth / 100
-  const rightX = PADDING_PCT * imageWidth / 100 + width + PADDING_PCT * imageWidth / 100
-
-  state.leftRegion = clampRegion({
-    x: leftX,
-    y,
-    w: width,
-    h: height
-  }, imageWidth, imageHeight, width, height)
-
-  state.rightRegion = clampRegion({
-    x: rightX,
-    y,
-    w: width,
-    h: height
-  }, imageWidth, imageHeight, width, height)
+  const centered = buildCenteredRegions(imageWidth, imageHeight)
+  state.regionWidth = centered.left.w
+  state.regionHeight = centered.left.h
+  state.leftRegion = clampRegion(centered.left, imageWidth, imageHeight, state.regionWidth, state.regionHeight)
+  state.rightRegion = clampRegion(centered.right, imageWidth, imageHeight, state.regionWidth, state.regionHeight)
 }
 
 function bindRegionInteraction(boxEl, regionKey) {
@@ -783,8 +771,8 @@ function buildCanvasOrManifest(kind = "Manifest") {
     ...canvasBase,
     id: canvasId,
     type: "Canvas",
-    width: state.leftRegion.w,
-    height: state.leftRegion.h,
+    width: state.regionWidth,
+    height: state.regionHeight,
     duration: canvasBase.duration ?? 0.4,
     ...pickExportFields(state.sourceCanvas, ["label", "metadata", "summary", "description", "rights", "requiredStatement"]),
     items: [
@@ -819,6 +807,7 @@ function buildCanvasOrManifest(kind = "Manifest") {
 
   const manifest = useMatchedManifest
     ? {
+      "@context": "http://iiif.io/api/presentation/3/context.json",
       ...deepCloneJson(matchedManifest),
       id: getIiifId(matchedManifest),
       type: "Manifest",
@@ -896,13 +885,15 @@ function normalizeIiifLabel(value) {
 }
 
 function buildPaintBody(region) {
+  const format = inferImageFormat(state.image)
+
   if (state.useImageApiSelector) {
     return {
       type: "SpecificResource",
       source: {
         id: state.image.id,
         type: "Image",
-        format: "image/jpeg",
+        format,
         width: state.image.width,
         height: state.image.height,
         service: state.image.service ? [state.image.service] : undefined
@@ -914,10 +905,14 @@ function buildPaintBody(region) {
     }
   }
 
+  if (!supportsRegionUrlExport(state.image)) {
+    throw new Error("Export requires a IIIF Image API source. Plain image URLs can be previewed but not cropped in exported IIIF.")
+  }
+
   return {
     id: toRegionUrl(state.image.id, region),
     type: "Image",
-    format: "image/jpeg",
+    format,
     width: region.w,
     height: region.h
   }
@@ -925,7 +920,7 @@ function buildPaintBody(region) {
 
 function downloadManifest() {
   try {
-    setCloverLink(null)
+    setViewerLinks(null)
     const json = buildCanvasOrManifest("Manifest")
     const blob = new Blob([JSON.stringify(json, null, 2)], { type: "application/json" })
     const url = URL.createObjectURL(blob)
@@ -933,7 +928,7 @@ function downloadManifest() {
     a.href = url
     a.download = "stereogram-manifest.json"
     a.click()
-    URL.revokeObjectURL(url)
+    setTimeout(() => URL.revokeObjectURL(url), 0)
     setStatus("Manifest downloaded")
   } catch (err) {
     setStatus(`Export failed: ${err.message}`, true)
@@ -942,7 +937,7 @@ function downloadManifest() {
 
 async function copyIiifContent() {
   try {
-    setCloverLink(null)
+    setViewerLinks(null)
     const manifest = buildCanvasOrManifest("Manifest")
     const encoded = toBase64Url(JSON.stringify(manifest))
     await navigator.clipboard.writeText(encoded)
@@ -955,16 +950,17 @@ async function copyIiifContent() {
 
 async function saveToRerum(kind) {
   try {
-    setCloverLink(null)
+    setViewerLinks(null)
     const payload = buildCanvasOrManifest(kind)
-    const json = await upsertRerum(kind, payload)
-    const savedId = getIiifId(json)
+    const { json, rerumId } = await upsertRerum(kind, payload)
+    const savedId = rerumId
     state.rerumMatch[kind] = savedId ?? state.rerumMatch[kind]
     if (kind === "Manifest" && savedId) {
-      const cloverUrl = buildCloverViewerUrl(savedId)
-      setCloverLink(cloverUrl)
+      iiifInputEl.value = savedId
+      persistIiifContentParam(savedId)
+      setViewerLinks(savedId)
       exportOutputEl.value = JSON.stringify(json, null, 2)
-      setStatus(`Saved ${kind} to RERUM. Clover link is available in Export.`)
+      setStatus(`Saved ${kind} to RERUM. Viewer links are available in Export.`)
     } else {
       exportOutputEl.value = JSON.stringify(json, null, 2)
       setStatus(`Saved ${kind} to RERUM`)
@@ -976,6 +972,10 @@ async function saveToRerum(kind) {
 
 function buildCloverViewerUrl(manifestUrl) {
   return `https://samvera-labs.github.io/clover-iiif/?iiif-content=${encodeURIComponent(manifestUrl)}`
+}
+
+function buildStereographViewerUrl(manifestUrl) {
+  return `${DAVID_NEWBURY_VIEWER_BASE}?iiif-content=${encodeURIComponent(manifestUrl)}`
 }
 
 function addStereographerMetadata(resource, kind) {
@@ -1017,16 +1017,19 @@ async function upsertRerum(kind, payload) {
     }
 
     const updateResponse = await fetch(`${RERUM_API_BASE}/update`, {
-      method: "POST",
+      method: "PUT",
       headers: {
         "Content-Type": "application/json"
       },
       body: JSON.stringify(updatePayload)
     })
 
-    if (updateResponse.ok) {
-      return updateResponse.json()
+    if (!updateResponse.ok) {
+      throw new Error(`RERUM update responded ${updateResponse.status}`)
     }
+
+    const json = await updateResponse.json()
+    return { json, rerumId: json["@id"] ?? json.id ?? null }
   }
 
   const createResponse = await fetch(`${RERUM_API_BASE}/create`, {
@@ -1041,7 +1044,8 @@ async function upsertRerum(kind, payload) {
     throw new Error(`RERUM responded ${createResponse.status}`)
   }
 
-  return createResponse.json()
+  const json = await createResponse.json()
+  return { json, rerumId: json["@id"] ?? json.id ?? null }
 }
 
 async function hydrateFromExistingRerumMatch() {
@@ -1074,7 +1078,7 @@ async function hydrateFromExistingRerumMatch() {
     updateCropHash()
 
     if (state.rerumMatch.Manifest) {
-      setCloverLink(buildCloverViewerUrl(state.rerumMatch.Manifest))
+      setViewerLinks(state.rerumMatch.Manifest)
     }
   } catch {
     // Ignore lookup failures and keep centered defaults.
@@ -1083,10 +1087,8 @@ async function hydrateFromExistingRerumMatch() {
 
 async function queryRerumStereographerRecords(sourceImageId) {
   const query = {
-    "$and": [
-      { "stereographer.generatedBy": STEREOGRAPHER_GENERATOR },
-      { "stereographer.sourceImageId": sourceImageId }
-    ]
+    "stereographer.generatedBy": STEREOGRAPHER_GENERATOR,
+    "stereographer.sourceImageId": sourceImageId
   }
 
   const response = await fetch(`${RERUM_API_BASE}/query`, {
@@ -1149,94 +1151,113 @@ function parseRegionFromBody(body) {
   }
 }
 
-function parseRegionString(value) {
-  if (!value || typeof value !== "string") return null
-  const parts = value.split(",").map(Number)
-  if (parts.length !== 4 || parts.some(Number.isNaN)) return null
-  return {
-    x: parts[0],
-    y: parts[1],
-    w: parts[2],
-    h: parts[3]
-  }
-}
+function setViewerLinks(manifestUrl) {
+  if (!viewerLinksRowEl || !cloverViewerLinkEl || !stereographViewerLinkEl) return
 
-function setCloverLink(url) {
-  if (!cloverLinkRowEl || !cloverLinkEl) return
-
-  if (!url) {
-    cloverLinkRowEl.hidden = true
-    cloverLinkEl.removeAttribute("href")
+  if (!manifestUrl) {
+    viewerLinksRowEl.hidden = true
+    cloverViewerLinkEl.removeAttribute("href")
+    stereographViewerLinkEl.removeAttribute("href")
     return
   }
 
-  cloverLinkEl.href = url
-  cloverLinkRowEl.hidden = false
+  cloverViewerLinkEl.href = buildCloverViewerUrl(manifestUrl)
+  stereographViewerLinkEl.href = buildStereographViewerUrl(manifestUrl)
+  viewerLinksRowEl.hidden = false
 }
 
-function resolveImageSource(resource) {
-  if (!resource || typeof resource !== "object") return null
+function updateImageApiSelectorAvailability() {
+  if (!imageApiSelectorToggleEl) return
 
-  const type = getIiifType(resource)
+  const supportsSelectorToggle = sourceSupportsImageApiSelector()
+  const selectorIsRequired = requiresImageApiSelector()
 
-  if (type === "Image") {
-    return {
-      id: getIiifId(resource),
-      width: resource.width,
-      height: resource.height,
-      service: normalizeService(resource.service)
-    }
+  imageApiSelectorToggleEl.disabled = selectorIsRequired
+  imageApiSelectorToggleEl.title = selectorIsRequired ? "Required for plain image sources" : ""
+
+  if (selectorIsRequired) {
+    state.useImageApiSelector = true
+    imageApiSelectorToggleEl.checked = true
+    return
   }
 
-  if (type === "Canvas") {
-    const anno = resource.items?.[0]?.items?.[0] ?? resource.images?.[0]
-    return resolveBodyToImage(anno?.body ?? anno?.resource)
+  if (!supportsSelectorToggle) {
+    state.useImageApiSelector = false
+    imageApiSelectorToggleEl.checked = false
+    return
   }
 
-  if (type === "Manifest") {
-    const canvas = resource.items?.[0] ?? resource.sequences?.[0]?.canvases?.[0]
-    if (!canvas) return null
-    return resolveImageSource(canvas)
-  }
-
-  return null
+  imageApiSelectorToggleEl.checked = state.useImageApiSelector
 }
 
-function resolveBodyToImage(body) {
-  if (!body) return null
+function sourceSupportsImageApiSelector() {
+  return Boolean(state.image?.service)
+}
 
-  const type = getIiifType(body)
+function requiresImageApiSelector() {
+  return Boolean(state.image?.id) && !sourceSupportsImageApiSelector() && !supportsRegionUrlExport(state.image)
+}
 
-  if (type === "Image") {
-    return {
-      id: getIiifId(body),
-      width: body.width,
-      height: body.height,
-      service: normalizeService(body.service)
-    }
+function supportsRegionUrlExport(image) {
+  return isIiifImageApiUrl(image?.id)
+}
+
+function isIiifImageApiUrl(value) {
+  if (!value) return false
+
+  try {
+    const parsed = new URL(value)
+    const segments = parsed.pathname.split("/").filter(Boolean)
+    if (segments.length < 4) return false
+
+    const region = segments.at(-4)
+    const size = segments.at(-3)
+    const rotation = segments.at(-2)
+    const quality = segments.at(-1)
+
+    return isIiifRegionSegment(region)
+      && isIiifSizeSegment(size)
+      && isIiifRotationSegment(rotation)
+      && isIiifQualitySegment(quality)
+  } catch {
+    return false
   }
-
-  if (type === "SpecificResource" && body.source) {
-    return resolveBodyToImage(body.source)
-  }
-
-  return null
 }
 
-function normalizeService(service) {
-  if (!service) return null
-  if (Array.isArray(service)) return service[0]
-  return service
+function isIiifRegionSegment(value) {
+  return value === "full"
+    || value === "square"
+    || /^pct:\d+(?:\.\d+)?,\d+(?:\.\d+)?,\d+(?:\.\d+)?,\d+(?:\.\d+)?$/i.test(value)
+    || /^\d+(?:\.\d+)?,\d+(?:\.\d+)?,\d+(?:\.\d+)?,\d+(?:\.\d+)?$/.test(value)
 }
 
-function getIiifType(value) {
-  const rawType = value?.type ?? value?.["@type"] ?? null
-  if (!rawType) return null
-  return rawType.includes(":") ? rawType.split(":").pop() : rawType
+function isIiifSizeSegment(value) {
+  return value === "max"
+    || value === "full"
+    || /^\^?max$/i.test(value)
+    || /^\^?pct:\d+(?:\.\d+)?$/i.test(value)
+    || /^!?\d+(?:\.\d+)?,\d*(?:\.\d+)?$/.test(value)
+    || /^!?\d*(?:\.\d+)?,\d+(?:\.\d+)?$/.test(value)
 }
 
-function getIiifId(value) {
-  return value?.id ?? value?.["@id"] ?? null
+function isIiifRotationSegment(value) {
+  return /^!?\d+(?:\.\d+)?$/.test(value)
+}
+
+function isIiifQualitySegment(value) {
+  return /^(?:default|color|gray|grey|bitonal)\.[a-z0-9]+$/i.test(value)
+}
+
+function inferImageFormat(image) {
+  if (image?.format) return image.format
+
+  const match = /\.(avif|bmp|gif|jpe?g|jp2|png|tiff?|webp)(?:$|[?#])/i.exec(image?.id ?? "")
+  if (!match) return "image/jpeg"
+
+  const ext = match[1].toLowerCase()
+  if (ext === "jpg") return "image/jpeg"
+  if (ext === "tif") return "image/tiff"
+  return `image/${ext}`
 }
 
 function toRegionUrl(baseImageUrl, region) {
@@ -1253,6 +1274,9 @@ function toRegionUrl(baseImageUrl, region) {
     if (regionIndex < 1) return baseImageUrl
 
     segments[regionIndex] = regionValue
+    if (segments[regionIndex + 1] === "full") {
+      segments[regionIndex + 1] = "max"
+    }
     parsed.pathname = segments.join("/")
     return parsed.toString()
   } catch {
@@ -1260,75 +1284,6 @@ function toRegionUrl(baseImageUrl, region) {
   }
 }
 
-function decodeIiifContentIfNeeded(raw) {
-  const maybeUrl = safeUrl(raw)
-  if (maybeUrl) {
-    const p = new URL(maybeUrl)
-    const embedded = p.searchParams.get("iiif-content")
-    if (embedded) {
-      const decoded = tryDecodeBase64Url(embedded)
-      if (decoded) {
-        const maybe = tryParseJson(decoded)
-        if (maybe?.id) return maybe.id
-      }
-      return embedded
-    }
-    return raw
-  }
-
-  const decoded = tryDecodeBase64Url(raw)
-  if (decoded) {
-    const maybe = tryParseJson(decoded)
-    if (maybe?.id) return maybe.id
-  }
-
-  return raw
-}
-
-function isLikelyImageUrl(value) {
-  const parsed = safeUrl(value)
-  if (!parsed) return false
-  return /\.(avif|bmp|gif|jpe?g|jp2|png|tiff?|webp)(?:$|[?#])/i.test(parsed)
-}
-
-function safeUrl(value) {
-  try {
-    return new URL(value).toString()
-  } catch {
-    return null
-  }
-}
-
-function tryDecodeBase64Url(value) {
-  try {
-    const normalized = value.replace(/-/g, "+").replace(/_/g, "/")
-    const padded = normalized + "===".slice((normalized.length + 3) % 4)
-    return atob(padded)
-  } catch {
-    return null
-  }
-}
-
-function toBase64Url(text) {
-  const b64 = btoa(text)
-  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
-}
-
-function tryParseJson(text) {
-  try {
-    return JSON.parse(text)
-  } catch {
-    return null
-  }
-}
-
-async function fetchJson(url) {
-  const response = await fetch(url)
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`)
-  }
-  return response.json()
-}
 
 function setStatus(message, isError = false) {
   statusEl.textContent = message

@@ -190,11 +190,6 @@ body::before {
   grid-row   : 2;
 }
 
-.controls-panel {
-  grid-column: 8 / span 5;
-  grid-row   : 2;
-}
-
 .export-panel {
   grid-column: 1 / span 12;
   grid-row   : 3;
@@ -321,7 +316,7 @@ button {
   border-color: #651b0b;
 }
 
-.clover-link-row {
+.viewer-links-row {
   margin     : 0.65rem 0 0.45rem;
   padding    : 0.45rem 0.6rem;
   border     : 1px solid rgba(122, 95, 66, 0.28);
@@ -331,11 +326,16 @@ button {
   font-size  : 0.98rem;
 }
 
-.clover-link-row a {
+.viewer-links-row a {
   color          : #7c2e18;
   font-weight    : 700;
   text-decoration: underline;
   margin-left    : 0.25rem;
+}
+
+.viewer-links-separator {
+  margin: 0 0.2rem 0 0.35rem;
+  color : rgba(91, 67, 45, 0.55);
 }
 
 .status {
@@ -575,7 +575,6 @@ input[type="text"] {
 
   .input-panel,
   .source-panel,
-  .controls-panel,
   .overlay-panel,
   .export-panel {
     grid-column: span 12;
